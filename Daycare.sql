@@ -199,4 +199,29 @@ VALUES
 
 
 
+CREATE TABLE Classroom (
+    Id int,
+    DayCareId int, 
+    Name varchar(255), 
+    Description varchar(255)
+);
+
+INSERT INTO Classroom (Id, DayCareId, Name, Description)
+VALUES 
+(1,	1,	'Suite A',	'Infants'),
+(2,	1,	'Suite B',	'Toddlers'),
+(3,	1,	'Suite C',	'Preschoolers'),
+(4,	1,	'Suite D',	'After School'),
+(5,	1,	'Suite E',	'KinderGarten'),
+(6,	2,	'Class 100',	'1 year old'),
+(7,	2,	'Class 150',	'2 year old'),
+(8,	2,	'Class 200',	'3 year old'),
+(9,	2,	'Class 250',	'4 year old'),
+(10,	2,	'Class 300',	'5 year old'),
+(11,	3,	'Room 1',	'Little Stars'),
+(12,	3,	'Room 2',	'Wild Tigers'),
+(13,	3,	'Room 3',	'Brave Eagles'),s
+(14,	3,	'Room 4',	'New Hope')
+
+
 
