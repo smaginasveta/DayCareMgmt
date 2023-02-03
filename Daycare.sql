@@ -5,7 +5,7 @@ CREATE DATABASE DayCareMgmt;
 USE DayCareMgmt;
 
 CREATE TABLE DayCare (
-    Id int,
+    Id int PRIMARY KEY,
     Name varchar(255)
 );
 
@@ -44,7 +44,7 @@ VALUES
 /*SELECT * FROM DayCareSettings;*/
 
 CREATE TABLE Teacher (
-    Id int,
+    Id int PRIMARY KEY,
     Name varchar(255), 
     Gender char(1),
     SSN varchar(100),
@@ -59,7 +59,7 @@ VALUES
 (3,	'Meagan Williams',	'F', '487815259',	'1966-03-23',	'2215 E Riviera Dr, Cedar Park, Texas(TX), 78613'),
 (4,	'Lori Miller',	'F',	'219993484',	'1966-06-22',	'2110 E Riviera Dr, Cedar Park, Texas(TX), 78613'),
 (5,	'Angela Smith',	'W',	'340943605',	'1967-05-16',	'114 Silver Maple Trl, Cedar Park, Texas(TX), 78613'),
-(6,	'Stephanie Simmons',	'F',	'841857790',	'1968-02-27',	'9307 Clearock Dr, Austin, Texas(TX), 78750'),
+(6,	'Stephanie Simmons',	'F',	'841 57790',	'1968-02-27',	'9307 Clearock Dr, Austin, Texas(TX), 78750'),
 (7,	'Angela Townsend',	'F',	'252222628',	'1968-07-31',	'11912 Nene Dr, Austin, Texas(TX), 78750'),
 (8,	'Hayley Hoffman',	'F',	'389419543',	'1971-06-30',	'11915 Brookwood Cir, Austin, Texas(TX), 78750'),
 (9,	'Allison Krause',	'F',	'627415419',	'1972-03-03',	'12300 Hickorystick Cv, Austin, Texas(TX), 78750'),
@@ -88,7 +88,7 @@ VALUES
 
 
 CREATE TABLE Student (
-    Id int,
+    Id int PRIMARY KEY,
     Name varchar(255), 
     Gender char(1),
     DateOfBirth date
@@ -200,7 +200,7 @@ VALUES
 
 
 CREATE TABLE Classroom (
-    Id int,
+    Id int PRIMARY KEY,
     DayCareId int, 
     Name varchar(255), 
     Description varchar(255)
@@ -220,8 +220,234 @@ VALUES
 (10,	2,	'Class 300',	'5 year old'),
 (11,	3,	'Room 1',	'Little Stars'),
 (12,	3,	'Room 2',	'Wild Tigers'),
-(13,	3,	'Room 3',	'Brave Eagles'),s
-(14,	3,	'Room 4',	'New Hope')
+(13,	3,	'Room 3',	'Brave Eagles'),
+(14,	3,	'Room 4',	'New Hope');
+
+
+CREATE TABLE StudentClassroomAssignment (
+    StudentId int,
+    ClassroomId int,
+    AssignmentDate date 
+);
+-- random student to classroom assignment
+INSERT INTO StudentClassroomAssignment (ClassroomId, StudentId, AssignmentDate)
+SELECT classroom_id, student_id, DATE_ADD(current_date(), INTERVAL - days_ago DAY) 
+FROM
+(
+SELECT c.id as classroom_id, s.id as student_id, FLOOR(rand()*300) as days_ago, ROW_NUMBER() OVER(PARTITION BY s.id ORDER BY rand()) AS row_num
+FROM ClassRoom AS c
+CROSS JOIN Student AS s
+ORDER BY rand()
+) AS random_students_assignment
+WHERE row_num = 1;
+
+-- select * from StudentClassroomAssignment where StudentId = 1; 
+
+-- select * from StudentClassroomAssignment;
+-- drop table TeacherClassroomAssignment;
+CREATE TABLE TeacherClassroomAssignment (
+    TeacherId int,
+    ClassroomId int
+);
+
+INSERT INTO TeacherClassroomAssignment (TeacherId, ClassroomId)
+SELECT classroom_id, teacher_id 
+FROM
+(
+SELECT c.id as classroom_id, t.id as teacher_id, ROW_NUMBER() OVER(PARTITION BY t.id ORDER BY rand()) AS row_num
+FROM ClassRoom AS c
+CROSS JOIN Teacher AS t
+) AS random_teacher_assignment
+WHERE row_num IN (1, 2);
+
+INSERT INTO TeacherClassroomAssignment (TeacherId, ClassroomId)
+SELECT classroom_id, teacher_id 
+FROM
+(
+SELECT c.id as classroom_id, t.id as teacher_id, ROW_NUMBER() OVER(PARTITION BY t.id ORDER BY rand()) AS row_num
+FROM ClassRoom AS c
+CROSS JOIN Teacher AS t
+LIMIT 10
+) AS random_students_assignment
+WHERE row_num IN (1);
+
+-- SELECT * FROM TeacherClassroomAssignment WHERE classroomId = 10;
+CREATE TABLE EventType (
+    Id int PRIMARY KEY,
+    Name varchar(255)
+);
+
+INSERT INTO EventType (Id, Name)
+VALUES 
+(1, 'CheckIn'),
+(2,	'CheckOut'),
+(3,	'Nap Start'),
+(4,	'Nap End'),
+(5,	'Snack'),
+(6,	'Art'),
+(7,	'Lunch'),
+(8,	'Bathroom break');
+
+CREATE TABLE Calendar
+(
+    CalendarDate date PRIMARY KEY,
+    IsWorkingDay boolean
+);
+
+INSERT INTO Calendar (CalendarDate, IsWorkingDay)
+SELECT CalendarDate, CASE WHEN dayofweek(CalendarDate) IN (1,7) THEN FALSE ELSE TRUE END AS IsWorkingDay
+FROM
+(
+SELECT DATE_ADD(CURRENT_DATE(), INTERVAL - ROW_NUMBER() OVER () DAY) as CalendarDate
+FROM ClassRoom AS c
+CROSS JOIN Teacher AS t -- no sence to join ClassRoom  + Teacher. Just need to have generator of subsequent numbers here to use for dates generation
+) AS dates;
+
+-- generate random events for each student/teacher/classroom/event type
+CREATE TABLE EventTracking (
+    Id int NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    TeacherId int,
+    StudentId int,
+    EventTypeId int,
+    EventDatetime datetime
+);
+-- generate checkin & checkout events
+INSERT INTO EventTracking (TeacherId, StudentId, EventDatetime,EventTypeId)
+SELECT TeacherId, StudentId, EventDatetime,EventTypeId FROM 
+(
+-- check-in 
+SELECT a.Studentid, 
+	   a.ClassroomId,
+       t.TeacherId,
+       c.CalendarDate, 
+       DATE_ADD(c.CalendarDate, INTERVAL (7*60 + FLOOR(rand() * 120)) minute) AS EventDatetime, 
+       1 /*check-in*/ as EventTypeId,
+       ROW_NUMBER() OVER (PARTITION BY a.StudentId, a.ClassroomId, c.CalendarDate ORDER BY rand()) AS row_num
+FROM StudentClassroomAssignment AS a
+INNER JOIN TeacherClassroomAssignment t ON t.ClassroomId = a.ClassroomId 
+CROSS JOIN Calendar AS c
+WHERE a.AssignmentDate >= c.CalendarDate AND c.IsWorkingDay
+UNION ALL
+-- check-out
+SELECT a.StudentId, 
+       a.ClassroomId,
+       t.TeacherId,
+       c.CalendarDate, 
+       DATE_ADD(c.CalendarDate, INTERVAL (16*60 + FLOOR(rand() * 180)) minute) AS EventDatetime, 
+       2 /*check-out*/ as EventTypeId,
+       ROW_NUMBER() OVER (PARTITION BY a.StudentId, a.ClassroomId, c.CalendarDate ORDER BY rand()) AS row_num
+FROM StudentClassroomAssignment AS a
+INNER JOIN TeacherClassroomAssignment t ON t.ClassroomId = a.ClassroomId 
+CROSS JOIN Calendar AS c
+WHERE a.AssignmentDate >= c.CalendarDate AND c.IsWorkingDay
+-- nap start
+UNION ALL
+SELECT a.StudentId, 
+       a.ClassroomId,
+       t.TeacherId,
+       c.CalendarDate, 
+       DATE_ADD(c.CalendarDate, INTERVAL (12*60 + FLOOR(rand() * 30)) minute) AS EventDatetime, 
+       3 /*nap start*/ as EventTypeId,
+       ROW_NUMBER() OVER (PARTITION BY a.StudentId, a.ClassroomId, c.CalendarDate ORDER BY rand()) AS row_num
+FROM StudentClassroomAssignment AS a
+INNER JOIN TeacherClassroomAssignment t ON t.ClassroomId = a.ClassroomId 
+CROSS JOIN Calendar AS c
+WHERE a.AssignmentDate >= c.CalendarDate AND c.IsWorkingDay
+-- nap end
+UNION ALL
+SELECT a.StudentId, 
+       a.ClassroomId,
+       t.TeacherId,
+       c.CalendarDate, 
+       DATE_ADD(c.CalendarDate, INTERVAL (14.5*60 + FLOOR(rand() * 30)) minute) AS EventDatetime, 
+       4 /*nap end*/ as EventTypeId,
+       ROW_NUMBER() OVER (PARTITION BY a.StudentId, a.ClassroomId, c.CalendarDate ORDER BY rand()) AS row_num
+FROM StudentClassroomAssignment AS a
+INNER JOIN TeacherClassroomAssignment t ON t.ClassroomId = a.ClassroomId 
+CROSS JOIN Calendar AS c
+WHERE a.AssignmentDate >= c.CalendarDate AND c.IsWorkingDay
+-- snack
+UNION ALL
+SELECT a.StudentId, 
+       a.ClassroomId,
+       t.TeacherId,
+       c.CalendarDate, 
+       DATE_ADD(c.CalendarDate, INTERVAL (9*60 + FLOOR(rand() * 15)) minute) AS EventDatetime, 
+       5 /*snack*/ as EventTypeId,
+       ROW_NUMBER() OVER (PARTITION BY a.StudentId, a.ClassroomId, c.CalendarDate ORDER BY rand()) AS row_num
+FROM StudentClassroomAssignment AS a
+INNER JOIN TeacherClassroomAssignment t ON t.ClassroomId = a.ClassroomId 
+CROSS JOIN Calendar AS c
+WHERE a.AssignmentDate >= c.CalendarDate AND c.IsWorkingDay
+-- snack
+UNION ALL
+SELECT a.StudentId, 
+       a.ClassroomId,
+       t.TeacherId,
+       c.CalendarDate, 
+       DATE_ADD(c.CalendarDate, INTERVAL (15*60 + FLOOR(rand() * 15)) minute) AS EventDatetime, 
+       5 /*snack*/ as EventTypeId,
+       ROW_NUMBER() OVER (PARTITION BY a.StudentId, a.ClassroomId, c.CalendarDate ORDER BY rand()) AS row_num
+FROM StudentClassroomAssignment AS a
+INNER JOIN TeacherClassroomAssignment t ON t.ClassroomId = a.ClassroomId 
+CROSS JOIN Calendar AS c
+WHERE a.AssignmentDate >= c.CalendarDate AND c.IsWorkingDay
+-- art
+UNION ALL
+SELECT a.StudentId, 
+       a.ClassroomId,
+       t.TeacherId,
+       c.CalendarDate, 
+       DATE_ADD(c.CalendarDate, INTERVAL (10.5*60 + FLOOR(rand() * 30)) minute) AS EventDatetime, 
+       6 /*art*/ as EventTypeId,
+       ROW_NUMBER() OVER (PARTITION BY a.StudentId, a.ClassroomId, c.CalendarDate ORDER BY rand()) AS row_num
+FROM StudentClassroomAssignment AS a
+INNER JOIN TeacherClassroomAssignment t ON t.ClassroomId = a.ClassroomId 
+CROSS JOIN Calendar AS c
+WHERE a.AssignmentDate >= c.CalendarDate AND c.IsWorkingDay
+-- lunch
+UNION ALL
+SELECT a.StudentId, 
+       a.ClassroomId,
+       t.TeacherId,
+       c.CalendarDate, 
+       DATE_ADD(c.CalendarDate, INTERVAL (11.5*60 + FLOOR(rand() * 20)) minute) AS EventDatetime, 
+       7 /*lunch*/ as EventTypeId,
+       ROW_NUMBER() OVER (PARTITION BY a.StudentId, a.ClassroomId, c.CalendarDate ORDER BY rand()) AS row_num
+FROM StudentClassroomAssignment AS a
+INNER JOIN TeacherClassroomAssignment t ON t.ClassroomId = a.ClassroomId 
+CROSS JOIN Calendar AS c
+WHERE a.AssignmentDate >= c.CalendarDate AND c.IsWorkingDay
+-- bathroom break
+UNION ALL
+SELECT a.StudentId, 
+       a.ClassroomId,
+       t.TeacherId,
+       c.CalendarDate, 
+       DATE_ADD(c.CalendarDate, INTERVAL (9*60 + FLOOR(rand() * 30)) minute) AS EventDatetime, 
+       8 /*bathroom*/ as EventTypeId,
+       ROW_NUMBER() OVER (PARTITION BY a.StudentId, a.ClassroomId, c.CalendarDate ORDER BY rand()) AS row_num
+FROM StudentClassroomAssignment AS a
+INNER JOIN TeacherClassroomAssignment t ON t.ClassroomId = a.ClassroomId 
+CROSS JOIN Calendar AS c
+WHERE a.AssignmentDate >= c.CalendarDate AND c.IsWorkingDay
+UNION ALL
+SELECT a.StudentId, 
+       a.ClassroomId,
+       t.TeacherId,
+       c.CalendarDate, 
+       DATE_ADD(c.CalendarDate, INTERVAL (11*60 + FLOOR(rand() * 30)) minute) AS EventDatetime, 
+       8 /*bathroom*/ as EventTypeId,
+       ROW_NUMBER() OVER (PARTITION BY a.StudentId, a.ClassroomId, c.CalendarDate ORDER BY rand()) AS row_num
+FROM StudentClassroomAssignment AS a
+INNER JOIN TeacherClassroomAssignment t ON t.ClassroomId = a.ClassroomId 
+CROSS JOIN Calendar AS c
+WHERE a.AssignmentDate >= c.CalendarDate AND c.IsWorkingDay
+
+) AS generated_events
+WHERE row_num = 1; 
+
+
 
 
 
